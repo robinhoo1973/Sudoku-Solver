@@ -1,140 +1,138 @@
 
-
-Class Cell{
-    [uint16]                            $x
-    [uint16]                            $y
-    [char]                              $value
-    [array]                             $valid=@()
-    [array]                             $iterated=@()
-    Cell([uint16]$x,[uint16]$y,[char[,]]$matrix){
-        $this.x         = $x
-        $this.y         = $y
-        $this.valid     = $this.GetValid($matrix)
-        $this|Add-Member -Name 'seeds' -MemberType ScriptProperty  -Value {
-            return [array] ($this.valid |Where-Object{$_ -notin $this.iterated})
-        }
-        $this|Add-Member -Name 'counts' -MemberType ScriptProperty  -Value {
-            return ([array] ($this.valid |Where-Object{$_ -notin $this.iterated})).count
-        }
+Class Cell {
+    [uint16]    $x
+    [uint16]    $y
+    [uint16]    $available  = 0
+    [char]      $seed       = "0"
+    [char[]]    $iterated   = @()
+    Cell([uint16]$x, [uint16]$y) {
+        $this.x = $x
+        $this.y = $y
+        $this.Seeding()
     }
 
-    [array] GetValid([char[,]]$matrix){
-        $private:Valid="123456789"
-        $private:x=$this.x - ($this.x -1) % 3 - 1
-        $private:y=$this.y - ($this.y -1) % 3 - 1
-
-        for($private:i=1;$private:i -le 9;$private:i++){
-            if($matrix[$this.x,$private:i] -ne 0 -and $private:i -ne $this.y){
-                $private:Valid = $private:Valid -replace $matrix[$this.x,$private:i],""
-            }
-            if($matrix[$private:i,$this.y] -ne 0 -and $private:i -ne $this.x){
-                $private:Valid = $private:Valid -replace $matrix[$private:i,$this.y],""
-            }
-            $private:posx=($private:x+($private:i - 1) % 3 + 1)
-            $private:posy=($private:y+[int](($private:i+0.6)/3))
-            if($matrix[$private:posx , $private:posy] -ne 0 -and $private:posx -ne $this.x -and $private:posy -ne $this.y){
-                $private:Valid = $private:Valid -replace $matrix[$private:posx , $private:posy],""
-            }
+    [void] Seeding() {
+        $private:seeds = "123456789"
+        $g = [math]::floor($this.x / 3) + [math]::floor($this.y / 3) * 3
+        $private:mask = "{0}{1}{2}{3}" -f ([Sudoku]::xrows[$this.x] -join ''), ([Sudoku]::yrows[$this.y] -join ''), ([Sudoku]::group[$g] -join ''), ($this.iterated -join '')
+        if ($private:mask.length -ne 0) {
+            $private:seeds = $private:seeds -replace "[$private:mask]"
         }
-        return [array]($private:Valid.ToCharArray()|Sort-Object)
-    }
-
-    [bool] GetNextValue([char[,]]$matrix){
-        $private:valid = $this.GetValid($matrix)
-        $private:available = [array] ($this.seeds |Where-Object{$_ -in $private:valid}|Sort-Object)
-        $this.Value=0
-        if($private:available.count -ne 0){
-            $this.Value     =  $private:available[0]
-            $this.iterated  += $private:available[0]
+        if ($private:seeds.length -ne 0) {
+            $private:seeds = [char[]] $private:seeds.ToCharArray()
+            [array]::sort($private:seeds)
         }
-        return $this.Value -ne 0
+        else {
+            $private:seeds = [char[]] @()
+        }
+        $this.available = $private:seeds.count
+        $this.seed = "0"
+        if($this.available -ne 0){
+            $this.seed  = $private:seeds[0]
+        }
     }
 }
 
-Class Sudoku{
-    [char[,]]    $matrix
-    [Cell[]]    $cells
-    [array]     $preset=@()
-    [datetime]  $starttick
-    Sudoku(){
-        $this.ReadMatrix()
-    }
+Class Sudoku {
+            [char[, ]]  $matrix
+            [Cell[]]    $available  = @()
+            [array]     $preset     = @()
+            [datetime]  $starttick
+    static  [array]     $xrows      = @()
+    static  [array]     $yrows      = @()
+    static  [array]     $group      = @()
 
-    Sudoku([string]$matrix){
-        $private:lines = ($matrix -replace "[ |\.]","0") -split "\n"
+    Sudoku([string]$matrix) {
+        $private:lines = ($matrix -replace "[ |\.]", "0") -split "\n"
         $private:size = $private:lines.length
-        $this.matrix = [char[,]]::new($private:size+1,$private:size+1)
-        for($private:x=1;$private:x -le $private:size;$private:x++){
-            $private:line=($private:lines[$private:x-1]).ToCharArray()
-            for($private:y=1;$private:y -le $private:size;$private:y++){
-                $this.matrix[$private:x,$private:y]=$private:line[$private:y-1]
+        $this.matrix = [char[,]]::new($private:size, $private:size)
+        [Sudoku]::xrows = [array[]]::new($private:size)
+        [Sudoku]::yrows = [array[]]::new($private:size)
+        [Sudoku]::group = [array[]]::new($private:size)
+        for ($private:y = 0; $private:y -lt $private:size; $private:y++) {
+            $private:line = ($private:lines[$private:y]).ToCharArray()
+            for ($private:x = 0; $private:x -lt $private:size; $private:x++) {
+                $this.SetCellValue($private:x, $private:y, $private:line[$private:x])
             }
         }
         $this.Initialize()
     }
 
-    [void]ReadMatrix(){
-        $private:size = 0
-        while($private:size -lt 2 -or $private:size -gt 5){
-            Clear-Host
-            Write-Host "The sudoku matrix is formed by N x N of 3x3 blocks."
-            $private:size=[uint16](Read-Host -Prompt "Please input the N(N>1 and N<5)")
-            if($private:size -lt 2 -or $private:size -gt 5){
-                Read-Host -Prompt "N is too small or too big! Try agian!"
-            }
+    [void]SetCellValue([int]$x, [int]$y, [char]$v) {
+        $g = [math]::floor($x / 3) + [math]::floor($y / 3) * 3
+        $this.DelCellValue($x, $y)
+        if ($v -ne "0") {
+            $this.matrix[$x, $y] = $v
+            [Sudoku]::xrows[$x] += $v
+            [Sudoku]::yrows[$y] += $v
+            [Sudoku]::group[$g] += $v
+            [array]::sort([Sudoku]::xrows[$x])
+            [array]::sort([Sudoku]::yrows[$y])
+            [array]::sort([Sudoku]::group[$g])
         }
-        $this.matrix = [char[,]]::new($private:size*3+1,$private:size*3+1)
-        Write-Host "Please input the preset numbers in the Sudoku matrix line by line."
-        Write-Host "Space, dot(.), or number 0 indicate the cell is empty."
-        for($private:i=1;$private:i -le $private:size*3;$private:i++){
-            $private:line = Read-Host -Prompt ("Please input line {0}" -f $private:i)
-            $private:line=($private:line -replace "[ |\.]","0") -replace "[^0-9]"
-            if($private:line.length -gt $private:size*3){
-                $private:line = $private:line.Substring(0,$private:size*3)
-            }
-            elseif($private:line.length -lt $private:size*3){
-                $private:line="{0}{1}" -f $private:line,("0"*($private:size*3 - $private:line.length))
-            }
-            Write-Host ("Normalized Line {0}" -f $private:line)
-            $private:line=$private:line.ToCharArray()
-            for($private:j=1;$private:j -le $private:size*3;$private:j++){
-                $this.matrix[$private:i,$private:j]=$private:line[$private:j-1]
-            }
-        }
-        $this.Initialize()
     }
 
-    [void] Initialize(){
-        for($private:x=1;$private:x -le 9;$private:x++){
-            for($private:y=1;$private:y -le 9;$private:y++){
-                if($this.matrix[$private:x,$private:y] -eq "0"){
-                    $this.cells += [Cell]::new($private:x,$private:y,$this.matrix)
+    [void]DelCellValue([int]$x, [int]$y) {
+        $v = $this.matrix[$x, $y]
+        $this.matrix[$x, $y] = "0"
+        $g = [math]::floor($x / 3) + [math]::floor($y / 3) * 3
+        $private:mask = ([Sudoku]::xrows[$x] -join '') -replace $v
+        if ($private:mask.length -ne 0) {
+            [Sudoku]::xrows[$x] = $private:mask.ToCharArray()
+        }
+        else {
+            [Sudoku]::xrows[$x] = @()
+        }
+        $private:mask = ([Sudoku]::yrows[$y] -join '') -replace $v
+        if ($private:mask.length -ne 0) {
+            [Sudoku]::yrows[$y] = $private:mask.ToCharArray()
+        }
+        else {
+            [Sudoku]::yrows[$y] = @()
+        }
+        $private:mask = ([Sudoku]::group[$g] -join '') -replace $v
+        if ($private:mask.length -ne 0) {
+            [Sudoku]::group[$g] = $private:mask.ToCharArray()
+        }
+        else {
+            [Sudoku]::group[$g] = @()
+        }
+    }
+
+    [void] Initialize() {
+        $private:size = [math]::sqrt($this.matrix.length)
+        for ($private:x = 0; $private:x -lt $private:size; $private:x++) {
+            for ($private:y = 0; $private:y -lt $private:size; $private:y++) {
+                if ($this.matrix[$private:x, $private:y] -eq "0") {
+                    $this.available += [Cell]::new($private:x, $private:y)
                 }
-                else{
-                    $this.preset+="{0},{1}" -f $private:x,$private:y
+                else {
+                    $this.preset += "{0},{1}" -f $private:x, $private:y
                 }
             }
         }
-        $this.cells = [array] ($this.cells|Sort-Object -Property counts)
+        Write-Host ("{0:yyyy}-{0:MM}-{0:dd} {0:HH}:{0:mm}:{0:ss}" -f (Get-Date))
         $this.DisplaySudoku()
+        $this.available   = [Cell[]] ($this.available | Sort-Object -Property available)
         $this.starttick = Get-Date
     }
 
-    [void] DisplaySudoku(){
+    [void] DisplaySudoku() {
+        $private:size = [math]::sqrt($this.matrix.length)
         Write-Host "+---+---+---+---+---+---+---+---+---+"
-        for($private:i=1;$private:i -le 9;$private:i++){
-            $private:line="|"
-            for($private:j=1;$private:j -le 9;$private:j++){
-                if($this.matrix[$private:i,$private:j] -ne 0){
-                    if(("{0},{1}" -f $private:i,$private:j) -in $this.preset){
-                        $private:line="{0}[{1}]|" -f $private:line,$this.matrix[$private:i,$private:j]
+        for ($private:y = 0; $private:y -lt $private:size; $private:y++) {
+            $private:line = "|"
+            for ($private:x = 0; $private:x -lt $private:size; $private:x++) {
+                if ($this.matrix[$private:x, $private:y] -ne "0") {
+                    if (("{0},{1}" -f $private:x, $private:y) -in $this.preset) {
+                        $private:line = "{0}[{1}]|" -f $private:line, $this.matrix[$private:x, $private:y]
                     }
-                    else{
-                        $private:line="{0} {1} |" -f $private:line,$this.matrix[$private:i,$private:j]
+                    else {
+                        $private:line = "{0} {1} |" -f $private:line, $this.matrix[$private:x, $private:y]
                     }
                 }
-                else{
-                    $private:line="{0}   |" -f $private:line
+                else {
+                    $private:line = "{0}   |" -f $private:line
                 }
             }
             Write-Host $private:line
@@ -143,28 +141,56 @@ Class Sudoku{
         Write-Host ""
     }
 
-    [void] Seeking(){
+    [void] Seeking() {
         $private:index = 0
-        while ($private:index -lt $this.cells.count -and $private:index -ge 0){
-            $private:seek = $this.cells[$private:index].GetNextValue($this.matrix)
-            $this.matrix[$this.cells[$private:index].x,$this.cells[$private:index].y]=$this.cells[$private:index].value
-            if($private:seek){
-                if($private:index -eq $this.cells.count-1){
+        while ($private:index -lt $this.available.count -and $private:index -ge 0){
+            $this.available[$private:index].Seeding()
+            $this.SetCellValue($this.available[$private:index].x,$this.available[$private:index].y,$this.available[$private:index].seed)
+            if($this.available[$private:index].seed -ne "0"){
+                $this.available[$private:index].iterated += $this.available[$private:index].seed
+                if ($private:index -eq $this.available.count-1) {
+                    Write-Host ("{0:yyyy}-{0:MM}-{0:dd} {0:HH}:{0:mm}:{0:ss}" -f (Get-Date))
+                    Write-Host ("{0:hh}:{0:mm}:{0:ss} -- {1:hh}:{1:mm}:{1:ss}" -f $this.starttick, (Get-Date))
                     $this.DisplaySudoku()
-                    Write-Host ("Solution Found in {0:hh}:{0:mm}:{0:ss}" -f (New-TimeSpan -Start $this.starttick -End (Get-Date)) )
                 }
                 else{
                     $private:index++
                 }
             }
             else{
-                $this.cells[$private:index].iterated = @()
+                $this.available[$private:index].iterated = @()
                 $private:index--
+                $this.DelCellValue($this.available[$private:index].x,$this.available[$private:index].y)
             }
+
+            for($i=$private:index;$i -lt $this.available.count;$i++){
+                $this.available[$i].Seeding()   
+            }
+            if($private:index -lt $this.available.count -and $private:index -ge 0){
+                $private:available = [Cell[]] ($this.available[$private:index..($this.available.count-1)]| Sort-Object -Property available)
+                [array]::copy($private:available,0,$this.available,$private:index,$private:available.count)
+            }
+
         }
     }
 }
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
+
+$Sudoku = [Sudoku]::new(@"
+1.4.67...
+5.983..4.
+.7..9.3..
+8..5.....
+..51.67..
+.....9..5
+..1.7..3.
+.9..541.2
+...91.6.4
+"@)
+
+$Sudoku.Seeking()
+
+
 $Sudoku = [Sudoku]::new(@"
 ...6.....
 ..5...3..
@@ -175,6 +201,20 @@ $Sudoku = [Sudoku]::new(@"
 .7.4.3.9.
 ..3...7..
 .....1...
+"@)
+
+$Sudoku.Seeking()
+
+$Sudoku = [Sudoku]::new(@"
+8........
+..36.....
+.7..9.2..
+.5...7...
+....457..
+...1...3.
+..1....68
+..85...1.
+.9....4..
 "@)
 
 $Sudoku.Seeking()
