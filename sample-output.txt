@@ -1,4 +1,4 @@
-[Running] powershell -ExecutionPolicy ByPass -File "c:\Users\HUJ9\OneDrive - Otis Elevator\PowerShell\Search and Delete\Sudoku.ps1"
+[Running] powershell -ExecutionPolicy ByPass -File "c:\PowerShell\Search and Delete\Sudoku.ps1"
 2023-10-29 21:20:34
 +---+---+---+---+---+---+---+---+---+
 |[1]|   |[4]|   |[6]|[7]|   |   |   |
