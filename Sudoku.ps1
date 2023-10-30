@@ -4,7 +4,7 @@ Class Cell {
     [uint16]    $y
     [uint16]    $available  = 0
     [char]      $seed       = "0"
-    [char[]]    $iterated   = @()
+    [string]    $iterated   = ""
     Cell([uint16]$x, [uint16]$y) {
         $this.x = $x
         $this.y = $y
@@ -14,7 +14,7 @@ Class Cell {
     [void] Seeding() {
         $private:seeds = "123456789"
         $g = [math]::floor($this.x / 3) + [math]::floor($this.y / 3) * 3
-        $private:mask = "{0}{1}{2}{3}" -f ([Sudoku]::xrows[$this.x] -join ''), ([Sudoku]::yrows[$this.y] -join ''), ([Sudoku]::group[$g] -join ''), ($this.iterated -join '')
+        $private:mask = "{0}{1}{2}{3}" -f [Sudoku]::x_grp[$this.x], [Sudoku]::y_grp[$this.y], [Sudoku]::b_grp[$g], $this.iterated
         if ($private:mask.length -ne 0) {
             $private:seeds = $private:seeds -replace "[$private:mask]"
         }
@@ -33,22 +33,29 @@ Class Cell {
     }
 }
 
+Class CellComparer: System.Collections.Generic.IComparer[Cell]
+{
+    [int] Compare([Cell] $x, [Cell] $y)
+    {
+        return $x.available -lt $y.available;
+    }
+}
 Class Sudoku {
             [char[, ]]  $matrix
-            [Cell[]]    $available  = @()
+            [Cell[]]    $queue  = @()
             [array]     $preset     = @()
-            [datetime]  $starttick
-    static  [array]     $xrows      = @()
-    static  [array]     $yrows      = @()
-    static  [array]     $group      = @()
+            [datetime]  $starttime
+    static  [array]     $x_grp      = @()
+    static  [array]     $y_grp      = @()
+    static  [array]     $b_grp      = @()
 
     Sudoku([string]$matrix) {
         $private:lines = ($matrix -replace "[ |\.]", "0") -split "\n"
         $private:size = $private:lines.length
         $this.matrix = [char[,]]::new($private:size, $private:size)
-        [Sudoku]::xrows = [array[]]::new($private:size)
-        [Sudoku]::yrows = [array[]]::new($private:size)
-        [Sudoku]::group = [array[]]::new($private:size)
+        [Sudoku]::x_grp = [string[]]::new($private:size)
+        [Sudoku]::y_grp = [string[]]::new($private:size)
+        [Sudoku]::b_grp = [string[]]::new($private:size)
         for ($private:y = 0; $private:y -lt $private:size; $private:y++) {
             $private:line = ($private:lines[$private:y]).ToCharArray()
             for ($private:x = 0; $private:x -lt $private:size; $private:x++) {
@@ -63,12 +70,9 @@ Class Sudoku {
         $this.DelCellValue($x, $y)
         if ($v -ne "0") {
             $this.matrix[$x, $y] = $v
-            [Sudoku]::xrows[$x] += $v
-            [Sudoku]::yrows[$y] += $v
-            [Sudoku]::group[$g] += $v
-            [array]::sort([Sudoku]::xrows[$x])
-            [array]::sort([Sudoku]::yrows[$y])
-            [array]::sort([Sudoku]::group[$g])
+            [Sudoku]::x_grp[$x] += $v
+            [Sudoku]::y_grp[$y] += $v
+            [Sudoku]::b_grp[$g] += $v
         }
     }
 
@@ -76,27 +80,9 @@ Class Sudoku {
         $v = $this.matrix[$x, $y]
         $this.matrix[$x, $y] = "0"
         $g = [math]::floor($x / 3) + [math]::floor($y / 3) * 3
-        $private:mask = ([Sudoku]::xrows[$x] -join '') -replace $v
-        if ($private:mask.length -ne 0) {
-            [Sudoku]::xrows[$x] = $private:mask.ToCharArray()
-        }
-        else {
-            [Sudoku]::xrows[$x] = @()
-        }
-        $private:mask = ([Sudoku]::yrows[$y] -join '') -replace $v
-        if ($private:mask.length -ne 0) {
-            [Sudoku]::yrows[$y] = $private:mask.ToCharArray()
-        }
-        else {
-            [Sudoku]::yrows[$y] = @()
-        }
-        $private:mask = ([Sudoku]::group[$g] -join '') -replace $v
-        if ($private:mask.length -ne 0) {
-            [Sudoku]::group[$g] = $private:mask.ToCharArray()
-        }
-        else {
-            [Sudoku]::group[$g] = @()
-        }
+        [Sudoku]::x_grp[$x]=[Sudoku]::x_grp[$x] -replace $v
+        [Sudoku]::y_grp[$y]=[Sudoku]::y_grp[$y] -replace $v
+        [Sudoku]::b_grp[$g]=[Sudoku]::b_grp[$g] -replace $v
     }
 
     [void] Initialize() {
@@ -104,17 +90,18 @@ Class Sudoku {
         for ($private:x = 0; $private:x -lt $private:size; $private:x++) {
             for ($private:y = 0; $private:y -lt $private:size; $private:y++) {
                 if ($this.matrix[$private:x, $private:y] -eq "0") {
-                    $this.available += [Cell]::new($private:x, $private:y)
+                    $this.queue += [Cell]::new($private:x, $private:y)
                 }
                 else {
                     $this.preset += "{0},{1}" -f $private:x, $private:y
                 }
             }
         }
-        Write-Host ("{0:yyyy}-{0:MM}-{0:dd} {0:HH}:{0:mm}:{0:ss}" -f (Get-Date))
+        Write-Host ("{0:yyyy}-{0:MM}-{0:dd} {0:HH}:{0:mm}:{0:ss}.{0:fff}" -f (Get-Date))
         $this.DisplaySudoku()
-        $this.available   = [Cell[]] ($this.available | Sort-Object -Property available)
-        $this.starttick = Get-Date
+        # [array]::sort($this.queue,[CellComparer]::new())
+        $this.queue   = [Cell[]] ($this.queue | Sort-Object -Property available)
+        $this.starttime = Get-Date
     }
 
     [void] DisplaySudoku() {
@@ -143,14 +130,14 @@ Class Sudoku {
 
     [void] Seeking() {
         $private:index = 0
-        while ($private:index -lt $this.available.count -and $private:index -ge 0){
-            $this.available[$private:index].Seeding()
-            $this.SetCellValue($this.available[$private:index].x,$this.available[$private:index].y,$this.available[$private:index].seed)
-            if($this.available[$private:index].seed -ne "0"){
-                $this.available[$private:index].iterated += $this.available[$private:index].seed
-                if ($private:index -eq $this.available.count-1) {
-                    Write-Host ("{0:yyyy}-{0:MM}-{0:dd} {0:HH}:{0:mm}:{0:ss}" -f (Get-Date))
-                    Write-Host ("{0:hh}:{0:mm}:{0:ss} -- {1:hh}:{1:mm}:{1:ss}" -f $this.starttick, (Get-Date))
+        while ($private:index -lt $this.queue.count -and $private:index -ge 0){
+            $this.queue[$private:index].Seeding()
+            $this.SetCellValue($this.queue[$private:index].x,$this.queue[$private:index].y,$this.queue[$private:index].seed)
+            if($this.queue[$private:index].seed -ne "0"){
+                $this.queue[$private:index].iterated += $this.queue[$private:index].seed
+                if ($private:index -eq $this.queue.count-1) {
+                    Write-Host ("{0:yyyy}-{0:MM}-{0:dd} {0:HH}:{0:mm}:{0:ss}.{0:fff}" -f (Get-Date))
+                    Write-Host ("{0:HH}:{0:mm}:{0:ss}.{0:fff} -- {1:HH}:{1:mm}:{1:ss}.{1:fff}" -f $this.starttime, (Get-Date))
                     $this.DisplaySudoku()
                 }
                 else{
@@ -158,24 +145,25 @@ Class Sudoku {
                 }
             }
             else{
-                $this.available[$private:index].iterated = @()
+                $this.queue[$private:index].iterated = ""
                 $private:index--
-                $this.DelCellValue($this.available[$private:index].x,$this.available[$private:index].y)
+                $this.DelCellValue($this.queue[$private:index].x,$this.queue[$private:index].y)
             }
 
-            for($i=$private:index;$i -lt $this.available.count;$i++){
-                $this.available[$i].Seeding()   
+            for($i=$private:index;$i -lt $this.queue.count;$i++){
+                $this.queue[$i].Seeding()   
             }
-            if($private:index -lt $this.available.count -and $private:index -ge 0){
-                $private:available = [Cell[]] ($this.available[$private:index..($this.available.count-1)]| Sort-Object -Property available)
-                [array]::copy($private:available,0,$this.available,$private:index,$private:available.count)
+            if($private:index -lt $this.queue.count -and $private:index -ge 0){
+                $private:queue = [Cell[]]$this.queue[$private:index..($this.queue.count-1)]
+                # [array]::sort($private:queue,[CellComparer]::new())
+                $private:queue = [Cell[]] ($this.queue[$private:index..($this.queue.count-1)]| Sort-Object -Property available)
+                [array]::copy($private:queue,0,$this.queue,$private:index,$private:queue.count)
             }
-
         }
     }
 }
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
-
+$starttime=(get-date)
 $Sudoku = [Sudoku]::new(@"
 1.4.67...
 5.983..4.
@@ -218,3 +206,6 @@ $Sudoku = [Sudoku]::new(@"
 "@)
 
 $Sudoku.Seeking()
+
+Write-Host
+Write-Host ("{0:yyyy}-{0:MM}-{0:dd} {0:HH}:{0:mm}:{0:ss}.{0:fff} -- {1:yyyy}-{1:MM}-{1:dd} {1:HH}:{1:mm}:{1:ss}.{1:fff}" -f $starttime, (Get-Date))
