@@ -33,13 +33,13 @@ Class Cell {
     }
 }
 
-Class CellComparer: System.Collections.Generic.IComparer[Cell]
-{
-    [int] Compare([Cell] $x, [Cell] $y)
-    {
-        return $x.available -lt $y.available;
-    }
-}
+# Class CellComparer: System.Collections.Generic.IComparer[Cell]
+# {
+#     [int] Compare([Cell] $x, [Cell] $y)
+#     {
+#         return $x.available -lt $y.available;
+#     }
+# }
 Class Sudoku {
             [char[, ]]  $matrix
             [Cell[]]    $queue  = @()
@@ -100,6 +100,7 @@ Class Sudoku {
         Write-Host ("{0:yyyy}-{0:MM}-{0:dd} {0:HH}:{0:mm}:{0:ss}.{0:fff}" -f (Get-Date))
         $this.DisplaySudoku()
         # [array]::sort($this.queue,[CellComparer]::new())
+        # $this.queue   = [System.Linq.Enumerable]::OrderBy([Cell[]]$this.queue,[Func[Cell,uint16]] {($args[0]).available})
         $this.queue   = [Cell[]] ($this.queue | Sort-Object -Property available)
         $this.starttime = Get-Date
     }
@@ -156,7 +157,8 @@ Class Sudoku {
             if($private:index -lt $this.queue.count -and $private:index -ge 0){
                 $private:queue = [Cell[]]$this.queue[$private:index..($this.queue.count-1)]
                 # [array]::sort($private:queue,[CellComparer]::new())
-                $private:queue = [Cell[]] ($this.queue[$private:index..($this.queue.count-1)]| Sort-Object -Property available)
+                $private:queue   = [Cell[]] [System.Linq.Enumerable]::OrderBy([Cell[]]$private:queue,[Func[Cell,uint16]] {($args[0]).available})
+                # $private:queue = [Cell[]] ($this.queue[$private:index..($this.queue.count-1)]| Sort-Object -Property available)
                 [array]::copy($private:queue,0,$this.queue,$private:index,$private:queue.count)
             }
         }
