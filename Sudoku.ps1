@@ -140,6 +140,7 @@ Class Sudoku {
                     Write-Host ("{0:yyyy}-{0:MM}-{0:dd} {0:HH}:{0:mm}:{0:ss}.{0:fff}" -f (Get-Date))
                     Write-Host ("{0:HH}:{0:mm}:{0:ss}.{0:fff} -- {1:HH}:{1:mm}:{1:ss}.{1:fff}" -f $this.starttime, (Get-Date))
                     $this.DisplaySudoku()
+                    $private:index--
                 }
                 else{
                     $private:index++
@@ -148,11 +149,24 @@ Class Sudoku {
             else{
                 $this.queue[$private:index].iterated = ""
                 $private:index--
-                $this.DelCellValue($this.queue[$private:index].x,$this.queue[$private:index].y)
+                if($private:index -lt $this.queue.count -and $private:index -ge 0){
+                    $this.DelCellValue($this.queue[$private:index].x,$this.queue[$private:index].y)
+                }
             }
-
-            for($i=$private:index;$i -lt $this.queue.count;$i++){
-                $this.queue[$i].Seeding()   
+            $i=$private:index
+            while($private:index -ge 0 -and $i -lt $this.queue.count){
+                $this.queue[$i].Seeding()
+                if($this.queue[$i].available -eq 0){
+                    $this.queue[$i].iterated = ""
+                    $private:index--
+                    $i=$private:index
+                    if($private:index -lt $this.queue.count -and $private:index -ge 0){
+                        $this.DelCellValue($this.queue[$i].x,$this.queue[$i].y)
+                    }
+                }
+                else{
+                    $i++
+                }
             }
             if($private:index -lt $this.queue.count -and $private:index -ge 0){
                 $private:queue = [Cell[]]$this.queue[$private:index..($this.queue.count-1)]
