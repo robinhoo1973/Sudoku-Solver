@@ -157,8 +157,8 @@ Class Sudoku {
             if($private:index -lt $this.queue.count -and $private:index -ge 0){
                 $private:queue = [Cell[]]$this.queue[$private:index..($this.queue.count-1)]
                 # [array]::sort($private:queue,[CellComparer]::new())
-                $private:queue   = [Cell[]] [System.Linq.Enumerable]::OrderBy([Cell[]]$private:queue,[Func[Cell,uint16]] {($args[0]).available})
-                # $private:queue = [Cell[]] ($this.queue[$private:index..($this.queue.count-1)]| Sort-Object -Property available)
+                # $private:queue   = [Cell[]] [System.Linq.Enumerable]::OrderBy([Cell[]]$private:queue,[Func[Cell,uint16]] {($args[0]).available})
+                $private:queue = [Cell[]] ($this.queue[$private:index..($this.queue.count-1)]| Sort-Object -Property available)
                 [array]::copy($private:queue,0,$this.queue,$private:index,$private:queue.count)
             }
         }
